@@ -12,7 +12,8 @@
   "dependencies": {
     "agents": "*",
     "ai": "*",
-    "workers-ai-provider": "*"
+    "workers-ai-provider": "*",
+    "zod": "*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "*",
