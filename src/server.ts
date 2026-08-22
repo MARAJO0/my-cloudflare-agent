@@ -1,8 +1,7 @@
-// redeploy
 import { Agent, routeAgentRequest, type AgentNamespace } from "agents";
 import * as ai from "ai";
 import { wrapAISDK } from "agents/observability/ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createWorkersAI } from "workers-ai-provider";
 
 const tracedAI = wrapAISDK(ai, {
   storeMessages: false,
@@ -17,7 +16,7 @@ const corsHeaders = {
 
 export interface Env {
   MyAgent: AgentNamespace<MyAgent>;
-  OPENAI_API_KEY: string;
+  AI: Ai;
 }
 
 export class MyAgent extends Agent<Env> {
@@ -43,10 +42,10 @@ export class MyAgent extends Agent<Env> {
       );
     }
 
-    const openai = createOpenAI({ apiKey: this.env.OPENAI_API_KEY });
+    const workersai = createWorkersAI({ binding: this.env.AI });
 
     const result = await tracedAI.generateText({
-      model: openai("gpt-4o-mini"),
+      model: workersai("@cf/meta/llama-3.1-8b-instruct"),
       prompt: message,
       experimental_telemetry: {
         isEnabled: true,
