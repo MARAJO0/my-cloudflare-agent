@@ -31,5 +31,7 @@
     }
   },
 
-  "vars": {}
+  "vars": {
+    "CLOUDFLARE_ZONE_ID": "8dd143ee670968d39dd88fe8d65abab4"
+  }
 }
