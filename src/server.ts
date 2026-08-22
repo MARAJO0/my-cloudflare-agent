@@ -45,7 +45,8 @@ export class MyAgent extends Agent<Env> {
     const workersai = createWorkersAI({ binding: this.env.AI });
 
     const result = await tracedAI.generateText({
-      model: workersai("@cf/meta/llama-3.1-8b-instruct"),
+      model: workersai("@cf/meta/llama-3.1-8b-instruct-fast"),
+
       prompt: message,
       experimental_telemetry: {
         isEnabled: true,
