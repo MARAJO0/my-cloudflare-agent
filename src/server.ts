@@ -1,4 +1,4 @@
-import { Agent, routeAgentRequest, tool, type AgentNamespace } from "agents";
+import { Agent, routeAgentRequest, type AgentNamespace } from "agents";
 import * as ai from "ai";
 import { wrapAISDK } from "agents/observability/ai";
 import { createWorkersAI } from "workers-ai-provider";
@@ -32,7 +32,7 @@ export class MyAgent extends Agent<Env> {
 
   buildTools() {
     return {
-      statusDoBotFightMode: tool({
+      statusDoBotFightMode: ai.tool({
         description:
           "Verifica se o Bot Fight Mode (proteção contra bots) está ativado no site.",
         inputSchema: z.object({}),
@@ -49,7 +49,7 @@ export class MyAgent extends Agent<Env> {
         },
       }),
 
-      configuracoesDeSeguranca: tool({
+      configuracoesDeSeguranca: ai.tool({
         description:
           "Consulta o nível de segurança e o modo SSL configurados no site.",
         inputSchema: z.object({}),
