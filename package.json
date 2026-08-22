@@ -12,7 +12,7 @@
   "dependencies": {
     "agents": "*",
     "ai": "*",
-    "@ai-sdk/openai": "*"
+    "workers-ai-provider": "*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "*",
