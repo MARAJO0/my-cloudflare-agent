@@ -1,0 +1,3 @@
+## Copy this file to .dev.vars (gitignored) for local `wrangler dev`.
+## In production, set the real value with: wrangler secret put OPENAI_API_KEY
+OPENAI_API_KEY=sk-...
