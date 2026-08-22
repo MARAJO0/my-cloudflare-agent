@@ -1,4 +1,3 @@
-// forcar rebuild
 import { Agent, routeAgentRequest, type AgentNamespace } from "agents";
 import * as ai from "ai";
 import { wrapAISDK } from "agents/observability/ai";
@@ -50,9 +49,30 @@ export class MyAgent extends Agent<Env> {
         },
       }),
 
+      ativarBotFightMode: ai.tool({
+        description:
+          "ATIVA o Bot Fight Mode (proteção contra bots) no site. Use depois de confirmar que ele estava desativado.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          const res = await fetch(
+            `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/bot_management`,
+            {
+              method: "PATCH",
+              headers: this.cfHeaders(),
+              body: JSON.stringify({ fight_mode: true }),
+            }
+          );
+          const data: any = await res.json();
+          if (!data.success) {
+            return { erro: "Não consegui ativar o Bot Fight Mode.", detalhes: data.errors };
+          }
+          return { botFightModeAtivado: data.result?.fight_mode ?? true, acao: "ativado agora" };
+        },
+      }),
+
       configuracoesDeSeguranca: ai.tool({
         description:
-          "Consulta o nível de segurança e o modo SSL configurados no site.",
+          "Consulta o nível de segurança, o modo SSL e se 'Always Use HTTPS' está ativado no site.",
         inputSchema: z.object({}),
         execute: async () => {
           const res = await fetch(
@@ -68,7 +88,29 @@ export class MyAgent extends Agent<Env> {
           return {
             nivelDeSeguranca: find("security_level"),
             modoSSL: find("ssl"),
+            alwaysUseHttpsAtivado: find("always_use_https") === "on",
           };
+        },
+      }),
+
+      ativarAlwaysUseHttps: ai.tool({
+        description:
+          "ATIVA a opção 'Always Use HTTPS', que força o acesso ao site via HTTPS. Use quando estiver desativada.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          const res = await fetch(
+            `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/settings/always_use_https`,
+            {
+              method: "PATCH",
+              headers: this.cfHeaders(),
+              body: JSON.stringify({ value: "on" }),
+            }
+          );
+          const data: any = await res.json();
+          if (!data.success) {
+            return { erro: "Não consegui ativar o Always Use HTTPS.", detalhes: data.errors };
+          }
+          return { alwaysUseHttpsAtivado: true, acao: "ativado agora" };
         },
       }),
     };
@@ -101,7 +143,7 @@ export class MyAgent extends Agent<Env> {
     const result = await tracedAI.generateText({
       model: workersai("@cf/meta/llama-3.1-8b-instruct-fast"),
       system:
-        "Você ajuda a monitorar a segurança de um site na Cloudflare. Quando o usuário perguntar sobre bots, segurança, SSL ou configurações do site, use as ferramentas disponíveis para responder com dados reais em vez de inventar. Responda em português.",
+        "Você monitora e mantém a segurança de um site na Cloudflare. Quando o usuário perguntar sobre bots, segurança, SSL ou HTTPS, primeiro use a ferramenta de consulta correspondente pra checar o status real. Se encontrar algo desativado que tenha uma ferramenta de ativação disponível (Bot Fight Mode ou Always Use HTTPS), avise o que encontrou E já use a ferramenta de ativação pra corrigir, sem precisar perguntar antes. Nunca invente ações que não existem como ferramentas. Sempre explique em português, de forma simples, o que você encontrou e o que fez.",
       prompt: message,
       tools: this.buildTools(),
       stopWhen: ai.stepCountIs(4),
