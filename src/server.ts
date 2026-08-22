@@ -2,7 +2,6 @@ import { Agent, routeAgentRequest, type AgentNamespace } from "agents";
 import * as ai from "ai";
 import { wrapAISDK } from "agents/observability/ai";
 import { createWorkersAI } from "workers-ai-provider";
-import { z } from "zod";
 
 const tracedAI = wrapAISDK(ai, {
   storeMessages: false,
@@ -30,90 +29,58 @@ export class MyAgent extends Agent<Env> {
     };
   }
 
-  buildTools() {
+  async getBotFightMode() {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/bot_management`,
+      { headers: this.cfHeaders() }
+    );
+    const data: any = await res.json();
+    if (!data.success) return { erro: "Não consegui consultar o Bot Fight Mode.", detalhes: data.errors };
+    return { botFightModeAtivado: data.result?.fight_mode ?? null };
+  }
+
+  async setBotFightMode(value: boolean) {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/bot_management`,
+      {
+        method: "PATCH",
+        headers: this.cfHeaders(),
+        body: JSON.stringify({ fight_mode: value }),
+      }
+    );
+    const data: any = await res.json();
+    if (!data.success) return { erro: "Não consegui alterar o Bot Fight Mode.", detalhes: data.errors };
+    return { botFightModeAtivado: data.result?.fight_mode ?? value, acao: value ? "ativado agora" : "desativado agora" };
+  }
+
+  async getSecuritySettings() {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/settings`,
+      { headers: this.cfHeaders() }
+    );
+    const data: any = await res.json();
+    if (!data.success) return { erro: "Não consegui consultar as configurações.", detalhes: data.errors };
+    const settings: Array<{ id: string; value: unknown }> = data.result ?? [];
+    const find = (id: string) => settings.find((s) => s.id === id)?.value ?? null;
     return {
-      statusDoBotFightMode: ai.tool({
-        description:
-          "Verifica se o Bot Fight Mode (proteção contra bots) está ativado no site.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const res = await fetch(
-            `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/bot_management`,
-            { headers: this.cfHeaders() }
-          );
-          const data: any = await res.json();
-          if (!data.success) {
-            return { erro: "Não consegui consultar o Bot Fight Mode.", detalhes: data.errors };
-          }
-          return { botFightModeAtivado: data.result?.fight_mode ?? null };
-        },
-      }),
-
-      ativarBotFightMode: ai.tool({
-        description:
-          "ATIVA o Bot Fight Mode (proteção contra bots) no site. Use depois de confirmar que ele estava desativado.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const res = await fetch(
-            `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/bot_management`,
-            {
-              method: "PATCH",
-              headers: this.cfHeaders(),
-              body: JSON.stringify({ fight_mode: true }),
-            }
-          );
-          const data: any = await res.json();
-          if (!data.success) {
-            return { erro: "Não consegui ativar o Bot Fight Mode.", detalhes: data.errors };
-          }
-          return { botFightModeAtivado: data.result?.fight_mode ?? true, acao: "ativado agora" };
-        },
-      }),
-
-      configuracoesDeSeguranca: ai.tool({
-        description:
-          "Consulta o nível de segurança, o modo SSL e se 'Always Use HTTPS' está ativado no site.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const res = await fetch(
-            `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/settings`,
-            { headers: this.cfHeaders() }
-          );
-          const data: any = await res.json();
-          if (!data.success) {
-            return { erro: "Não consegui consultar as configurações.", detalhes: data.errors };
-          }
-          const settings: Array<{ id: string; value: unknown }> = data.result ?? [];
-          const find = (id: string) => settings.find((s) => s.id === id)?.value ?? null;
-          return {
-            nivelDeSeguranca: find("security_level"),
-            modoSSL: find("ssl"),
-            alwaysUseHttpsAtivado: find("always_use_https") === "on",
-          };
-        },
-      }),
-
-      ativarAlwaysUseHttps: ai.tool({
-        description:
-          "ATIVA a opção 'Always Use HTTPS', que força o acesso ao site via HTTPS. Use quando estiver desativada.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const res = await fetch(
-            `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/settings/always_use_https`,
-            {
-              method: "PATCH",
-              headers: this.cfHeaders(),
-              body: JSON.stringify({ value: "on" }),
-            }
-          );
-          const data: any = await res.json();
-          if (!data.success) {
-            return { erro: "Não consegui ativar o Always Use HTTPS.", detalhes: data.errors };
-          }
-          return { alwaysUseHttpsAtivado: true, acao: "ativado agora" };
-        },
-      }),
+      nivelDeSeguranca: find("security_level"),
+      modoSSL: find("ssl"),
+      alwaysUseHttpsAtivado: find("always_use_https") === "on",
     };
+  }
+
+  async setAlwaysUseHttps(on: boolean) {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/settings/always_use_https`,
+      {
+        method: "PATCH",
+        headers: this.cfHeaders(),
+        body: JSON.stringify({ value: on ? "on" : "off" }),
+      }
+    );
+    const data: any = await res.json();
+    if (!data.success) return { erro: "Não consegui alterar o Always Use HTTPS.", detalhes: data.errors };
+    return { alwaysUseHttpsAtivado: on, acao: on ? "ativado agora" : "desativado agora" };
   }
 
   async onRequest(request: Request): Promise<Response> {
@@ -138,15 +105,42 @@ export class MyAgent extends Agent<Env> {
       );
     }
 
+    const lower = message.toLowerCase();
+    const wantsBot = /bot|robô|robo/.test(lower);
+    const wantsSecurity = /seguran|ssl|https|criptografia/.test(lower);
+    const wantsFix = /ativ|corrij|conserta|conserte|arruma|liga|resolv/.test(lower);
+
+    const dados: Record<string, unknown> = {};
+
+    if (wantsBot) {
+      const status: any = await this.getBotFightMode();
+      dados.botFightMode = status;
+      if (wantsFix && status.botFightModeAtivado === false) {
+        dados.acaoBotFightMode = await this.setBotFightMode(true);
+      }
+    }
+
+    if (wantsSecurity) {
+      const status: any = await this.getSecuritySettings();
+      dados.seguranca = status;
+      if (wantsFix && status.alwaysUseHttpsAtivado === false) {
+        dados.acaoAlwaysUseHttps = await this.setAlwaysUseHttps(true);
+      }
+    }
+
+    if (!wantsBot && !wantsSecurity) {
+      dados.aviso = "Não identifiquei se a pergunta era sobre bots ou sobre segurança/SSL/HTTPS.";
+    }
+
     const workersai = createWorkersAI({ binding: this.env.AI });
 
     const result = await tracedAI.generateText({
       model: workersai("@cf/meta/llama-3.1-8b-instruct-fast"),
       system:
-        "Você monitora e mantém a segurança de um site na Cloudflare. Quando o usuário perguntar sobre bots, segurança, SSL ou HTTPS, primeiro use a ferramenta de consulta correspondente pra checar o status real. Se encontrar algo desativado que tenha uma ferramenta de ativação disponível (Bot Fight Mode ou Always Use HTTPS), avise o que encontrou E já use a ferramenta de ativação pra corrigir, sem precisar perguntar antes. Nunca invente ações que não existem como ferramentas. Sempre explique em português, de forma simples, o que você encontrou e o que fez.",
-      prompt: message,
-      tools: this.buildTools(),
-      stopWhen: ai.stepCountIs(4),
+        "Você explica em português, de forma simples e direta, o status de segurança de um site na Cloudflare e o que foi corrigido automaticamente, com base apenas nos dados JSON fornecidos. Nunca invente números ou status que não estejam nos dados.",
+      prompt: `Pergunta do usuário: "${message}"\n\nDados reais consultados na Cloudflare: ${JSON.stringify(
+        dados
+      )}\n\nResponda ao usuário explicando o que foi encontrado e, se alguma ação foi tomada, o que foi feito.`,
       experimental_telemetry: {
         isEnabled: true,
         functionId: "my-agent.chat",
