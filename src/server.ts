@@ -19,7 +19,14 @@ export interface Env {
   AI: Ai;
   CLOUDFLARE_API_TOKEN: string;
   CLOUDFLARE_ZONE_ID: string;
+  CLOUDFLARE_ZONE_ID_CISS: string;
 }
+
+type Site = {
+  chave: string;
+  nome: string;
+  zoneId: string;
+};
 
 export class MyAgent extends Agent<Env> {
   cfHeaders() {
@@ -29,9 +36,23 @@ export class MyAgent extends Agent<Env> {
     };
   }
 
-  async getBotFightMode() {
+  getSites(): Site[] {
+    return [
+      { chave: "salgaderia", nome: "edilenesalgaderia.com.br", zoneId: this.env.CLOUDFLARE_ZONE_ID },
+      { chave: "ciss", nome: "cissbrasil.com", zoneId: this.env.CLOUDFLARE_ZONE_ID_CISS },
+    ];
+  }
+
+  detectSite(lower: string): Site {
+    const sites = this.getSites();
+    const wantsCiss = /ciss|selva|sobreviv|starlink|spot ?x|pirotecni|esmerilha|ro[cç]adeira/.test(lower);
+    if (wantsCiss) return sites.find((s) => s.chave === "ciss")!;
+    return sites.find((s) => s.chave === "salgaderia")!;
+  }
+
+  async getBotFightMode(zoneId: string) {
     const res = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/bot_management`,
+      `https://api.cloudflare.com/client/v4/zones/${zoneId}/bot_management`,
       { headers: this.cfHeaders() }
     );
     const data: any = await res.json();
@@ -39,9 +60,9 @@ export class MyAgent extends Agent<Env> {
     return { botFightModeAtivado: data.result?.fight_mode ?? null };
   }
 
-  async setBotFightMode(value: boolean) {
+  async setBotFightMode(zoneId: string, value: boolean) {
     const res = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/bot_management`,
+      `https://api.cloudflare.com/client/v4/zones/${zoneId}/bot_management`,
       {
         method: "PATCH",
         headers: this.cfHeaders(),
@@ -53,9 +74,9 @@ export class MyAgent extends Agent<Env> {
     return { botFightModeAtivado: data.result?.fight_mode ?? value, acao: value ? "ativado agora" : "desativado agora" };
   }
 
-  async getSecuritySettings() {
+  async getSecuritySettings(zoneId: string) {
     const res = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/settings`,
+      `https://api.cloudflare.com/client/v4/zones/${zoneId}/settings`,
       { headers: this.cfHeaders() }
     );
     const data: any = await res.json();
@@ -69,9 +90,9 @@ export class MyAgent extends Agent<Env> {
     };
   }
 
-  async setAlwaysUseHttps(on: boolean) {
+  async setAlwaysUseHttps(zoneId: string, on: boolean) {
     const res = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${this.env.CLOUDFLARE_ZONE_ID}/settings/always_use_https`,
+      `https://api.cloudflare.com/client/v4/zones/${zoneId}/settings/always_use_https`,
       {
         method: "PATCH",
         headers: this.cfHeaders(),
@@ -110,21 +131,22 @@ export class MyAgent extends Agent<Env> {
     const wantsSecurity = /seguran|ssl|https|criptografia/.test(lower);
     const wantsFix = /ativ|corrij|conserta|conserte|arruma|liga|resolv/.test(lower);
 
-    const dados: Record<string, unknown> = {};
+    const site = this.detectSite(lower);
+    const dados: Record<string, unknown> = { site: site.nome };
 
     if (wantsBot) {
-      const status: any = await this.getBotFightMode();
+      const status: any = await this.getBotFightMode(site.zoneId);
       dados.botFightMode = status;
       if (wantsFix && status.botFightModeAtivado === false) {
-        dados.acaoBotFightMode = await this.setBotFightMode(true);
+        dados.acaoBotFightMode = await this.setBotFightMode(site.zoneId, true);
       }
     }
 
     if (wantsSecurity) {
-      const status: any = await this.getSecuritySettings();
+      const status: any = await this.getSecuritySettings(site.zoneId);
       dados.seguranca = status;
       if (wantsFix && status.alwaysUseHttpsAtivado === false) {
-        dados.acaoAlwaysUseHttps = await this.setAlwaysUseHttps(true);
+        dados.acaoAlwaysUseHttps = await this.setAlwaysUseHttps(site.zoneId, true);
       }
     }
 
@@ -137,8 +159,8 @@ export class MyAgent extends Agent<Env> {
     const result = await tracedAI.generateText({
       model: workersai("@cf/meta/llama-3.1-8b-instruct-fast"),
       system:
-        "Você explica em português, de forma simples e direta, o status de segurança de um site na Cloudflare e o que foi corrigido automaticamente, com base apenas nos dados JSON fornecidos. Nunca invente números ou status que não estejam nos dados.",
-      prompt: `Pergunta do usuário: "${message}"\n\nDados reais consultados na Cloudflare: ${JSON.stringify(
+        "Você explica em português, de forma simples e direta, o status de segurança de um site na Cloudflare e o que foi corrigido automaticamente, com base apenas nos dados JSON fornecidos. Sempre deixe claro de qual site (domínio) está falando. Nunca invente números ou status que não estejam nos dados.",
+      prompt: `Pergunta do usuário: "${message}"\n\nDados reais consultados na Cloudflare (site: ${site.nome}): ${JSON.stringify(
         dados
       )}\n\nResponda ao usuário explicando o que foi encontrado e, se alguma ação foi tomada, o que foi feito.`,
       experimental_telemetry: {
