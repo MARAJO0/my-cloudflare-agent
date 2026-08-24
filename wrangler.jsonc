@@ -5,7 +5,7 @@
   "compatibility_date": "2024-11-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  "durable_objects": {
+  "durable_objects": { 
     "bindings": [
       {
         "name": "MyAgent",
@@ -31,7 +31,7 @@
     }
   },
 
-  "vars": {
-    "CLOUDFLARE_ZONE_ID": "8dd143ee670968d39dd88fe8d65abab4"
-  }
+ "vars": {
+  "CLOUDFLARE_ZONE_ID": "8dd143ee670968d39dd88fe8d65abab4",
+  "CLOUDFLARE_ZONE_ID_CISS": "bf3402d5f0155fd33ef6d7720e56143d"
 }
