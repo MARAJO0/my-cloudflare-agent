@@ -77,14 +77,20 @@ export class MyAgent extends Agent<Env> {
   }
 
   async setBotFightMode(zoneId: string, value: boolean) {
-    const res = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${zoneId}/bot_management`,
-      {
-        method: "PATCH",
-        headers: this.cfHeaders(),
-        body: JSON.stringify({ fight_mode: value }),
-      }
-    );
+    const url = `https://api.cloudflare.com/client/v4/zones/${zoneId}/bot_management`;
+    // A Cloudflare só aceita PUT aqui. Reenvia a configuração atual para não apagar
+    // nenhuma outra opção, mudando apenas o Bot Fight Mode.
+    const atual: any = await (await fetch(url, { headers: this.cfHeaders() })).json();
+    const body: Record<string, unknown> = {};
+    for (const campo of ["enable_js", "ai_bots_protection", "crawler_protection", "is_robots_txt_managed"]) {
+      if (atual?.result && campo in atual.result) body[campo] = atual.result[campo];
+    }
+    body.fight_mode = value;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: this.cfHeaders(),
+      body: JSON.stringify(body),
+    });
     const data: any = await res.json();
     if (!data.success) return { erro: "Não consegui alterar o Bot Fight Mode.", detalhes: data.errors };
     return { botFightModeAtivado: data.result?.fight_mode ?? value, acao: value ? "ativado agora" : "desativado agora" };
@@ -165,7 +171,7 @@ export class MyAgent extends Agent<Env> {
     }
 
     const lower = message.toLowerCase();
-    const wantsFix = /ativ|corrij|conserta|conserte|arruma|liga|resolv/.test(lower);
+    const wantsFix = /ativ|corrig|corrij|conserta|conserte|arruma|liga|resolv/.test(lower);
     const wantsAll = /todos|todas|meus sites|cada site/.test(lower);
     let wantsBot = /bot|robô|robo/.test(lower);
     let wantsSecurity = /seguran|ssl|https|criptografia/.test(lower);
