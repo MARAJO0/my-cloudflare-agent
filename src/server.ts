@@ -205,6 +205,7 @@ export class MyAgent extends Agent<Env> {
 
     const result = await tracedAI.generateText({
       model: workersai("@cf/meta/llama-3.1-8b-instruct-fast"),
+      maxOutputTokens: 1500,
       system:
         "Você explica em português, de forma simples e direta, o status de segurança de sites na Cloudflare e o que foi corrigido automaticamente, com base apenas nos dados JSON fornecidos. Fale de cada site separadamente, sempre dizendo o domínio. Nunca invente números ou status que não estejam nos dados.",
       prompt: `Pergunta do usuário: "${message}"\n\nDados reais consultados na Cloudflare: ${JSON.stringify(
