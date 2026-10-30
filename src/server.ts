@@ -18,15 +18,16 @@ export interface Env {
   MyAgent: AgentNamespace<MyAgent>;
   AI: Ai;
   CLOUDFLARE_API_TOKEN: string;
-  CLOUDFLARE_ZONE_ID: string;
-  CLOUDFLARE_ZONE_ID_CISS: string;
 }
 
-type Site = {
-  chave: string;
-  nome: string;
-  zoneId: string;
-};
+type Site = { nome: string; zoneId: string };
+
+const APELIDOS: Array<{ pergunta: RegExp; dominio: RegExp }> = [
+  { pergunta: /salgad|edilene/, dominio: /salgaderia/ },
+  { pergunta: /ciss|selva|sobreviv|starlink|spot ?x|pirotecni/, dominio: /ciss/ },
+  { pergunta: /florescer/, dominio: /florescer/ },
+  { pergunta: /manaus|decora/, dominio: /manaus/ },
+];
 
 export class MyAgent extends Agent<Env> {
   cfHeaders() {
@@ -36,18 +37,29 @@ export class MyAgent extends Agent<Env> {
     };
   }
 
-  getSites(): Site[] {
-    return [
-      { chave: "salgaderia", nome: "edilenesalgaderia.com.br", zoneId: this.env.CLOUDFLARE_ZONE_ID },
-      { chave: "ciss", nome: "cissbrasil.com", zoneId: this.env.CLOUDFLARE_ZONE_ID_CISS },
-    ];
+  async listSites(): Promise<Site[] | { erro: string; detalhes: unknown }> {
+    const res = await fetch(
+      "https://api.cloudflare.com/client/v4/zones?per_page=50",
+      { headers: this.cfHeaders() }
+    );
+    const data: any = await res.json();
+    if (!data.success) return { erro: "Não consegui listar os sites da conta.", detalhes: data.errors };
+    return (data.result ?? []).map((z: any) => ({ nome: z.name, zoneId: z.id }));
   }
 
-  detectSite(lower: string): Site {
-    const sites = this.getSites();
-    const wantsCiss = /ciss|selva|sobreviv|starlink|spot ?x|pirotecni|esmerilha|ro[cç]adeira/.test(lower);
-    if (wantsCiss) return sites.find((s) => s.chave === "ciss")!;
-    return sites.find((s) => s.chave === "salgaderia")!;
+  pickSites(lower: string, sites: Site[]): Site[] {
+    const escolhidos = new Set<Site>();
+    for (const site of sites) {
+      const primeiraParte = site.nome.split(".")[0];
+      if (lower.includes(site.nome) || lower.includes(primeiraParte)) escolhidos.add(site);
+    }
+    for (const apelido of APELIDOS) {
+      if (!apelido.pergunta.test(lower)) continue;
+      for (const site of sites) {
+        if (apelido.dominio.test(site.nome)) escolhidos.add(site);
+      }
+    }
+    return [...escolhidos];
   }
 
   async getBotFightMode(zoneId: string) {
@@ -104,6 +116,28 @@ export class MyAgent extends Agent<Env> {
     return { alwaysUseHttpsAtivado: on, acao: on ? "ativado agora" : "desativado agora" };
   }
 
+  async checkSite(site: Site, wantsBot: boolean, wantsSecurity: boolean, podeCorrigir: boolean) {
+    const dados: Record<string, unknown> = { site: site.nome };
+
+    if (wantsBot) {
+      const status: any = await this.getBotFightMode(site.zoneId);
+      dados.botFightMode = status;
+      if (podeCorrigir && status.botFightModeAtivado === false) {
+        dados.acaoBotFightMode = await this.setBotFightMode(site.zoneId, true);
+      }
+    }
+
+    if (wantsSecurity) {
+      const status: any = await this.getSecuritySettings(site.zoneId);
+      dados.seguranca = status;
+      if (podeCorrigir && status.alwaysUseHttpsAtivado === false) {
+        dados.acaoAlwaysUseHttps = await this.setAlwaysUseHttps(site.zoneId, true);
+      }
+    }
+
+    return dados;
+  }
+
   async onRequest(request: Request): Promise<Response> {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
@@ -127,31 +161,38 @@ export class MyAgent extends Agent<Env> {
     }
 
     const lower = message.toLowerCase();
-    const wantsBot = /bot|robô|robo/.test(lower);
-    const wantsSecurity = /seguran|ssl|https|criptografia/.test(lower);
     const wantsFix = /ativ|corrij|conserta|conserte|arruma|liga|resolv/.test(lower);
-
-    const site = this.detectSite(lower);
-    const dados: Record<string, unknown> = { site: site.nome };
-
-    if (wantsBot) {
-      const status: any = await this.getBotFightMode(site.zoneId);
-      dados.botFightMode = status;
-      if (wantsFix && status.botFightModeAtivado === false) {
-        dados.acaoBotFightMode = await this.setBotFightMode(site.zoneId, true);
-      }
-    }
-
-    if (wantsSecurity) {
-      const status: any = await this.getSecuritySettings(site.zoneId);
-      dados.seguranca = status;
-      if (wantsFix && status.alwaysUseHttpsAtivado === false) {
-        dados.acaoAlwaysUseHttps = await this.setAlwaysUseHttps(site.zoneId, true);
-      }
-    }
+    const wantsAll = /todos|todas|meus sites|cada site/.test(lower);
+    let wantsBot = /bot|robô|robo/.test(lower);
+    let wantsSecurity = /seguran|ssl|https|criptografia/.test(lower);
 
     if (!wantsBot && !wantsSecurity) {
-      dados.aviso = "Não identifiquei se a pergunta era sobre bots ou sobre segurança/SSL/HTTPS.";
+      wantsBot = true;
+      wantsSecurity = true;
+    }
+
+    const lista = await this.listSites();
+    let dados: Record<string, unknown>;
+
+    if (!Array.isArray(lista)) {
+      dados = lista;
+    } else {
+      const citados = this.pickSites(lower, lista);
+      const alvo = citados.length > 0 && !wantsAll ? citados : lista;
+      const podeCorrigir = wantsFix && (citados.length > 0 || wantsAll);
+
+      const resultados = [];
+      for (const site of alvo) {
+        resultados.push(await this.checkSite(site, wantsBot, wantsSecurity, podeCorrigir));
+      }
+
+      dados = {
+        sitesMonitorados: lista.map((s) => s.nome),
+        resultados,
+        ...(wantsFix && !podeCorrigir
+          ? { aviso: "Pediu correção sem dizer qual site: só consultei. Diga o nome do site ou 'todos'." }
+          : {}),
+      };
     }
 
     const workersai = createWorkersAI({ binding: this.env.AI });
@@ -159,10 +200,10 @@ export class MyAgent extends Agent<Env> {
     const result = await tracedAI.generateText({
       model: workersai("@cf/meta/llama-3.1-8b-instruct-fast"),
       system:
-        "Você explica em português, de forma simples e direta, o status de segurança de um site na Cloudflare e o que foi corrigido automaticamente, com base apenas nos dados JSON fornecidos. Sempre deixe claro de qual site (domínio) está falando. Nunca invente números ou status que não estejam nos dados.",
-      prompt: `Pergunta do usuário: "${message}"\n\nDados reais consultados na Cloudflare (site: ${site.nome}): ${JSON.stringify(
+        "Você explica em português, de forma simples e direta, o status de segurança de sites na Cloudflare e o que foi corrigido automaticamente, com base apenas nos dados JSON fornecidos. Fale de cada site separadamente, sempre dizendo o domínio. Nunca invente números ou status que não estejam nos dados.",
+      prompt: `Pergunta do usuário: "${message}"\n\nDados reais consultados na Cloudflare: ${JSON.stringify(
         dados
-      )}\n\nResponda ao usuário explicando o que foi encontrado e, se alguma ação foi tomada, o que foi feito.`,
+      )}\n\nResponda ao usuário explicando o que foi encontrado em cada site e, se alguma ação foi tomada, o que foi feito.`,
       experimental_telemetry: {
         isEnabled: true,
         functionId: "my-agent.chat",
