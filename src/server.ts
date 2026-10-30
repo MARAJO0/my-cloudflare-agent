@@ -1,38 +1,46 @@
-{
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "my-cloudflare-agent",
-  "main": "src/server.ts",
-  "compatibility_date": "2024-11-01",
-  "compatibility_flags": ["nodejs_compat"],
+import { Agent, routeAgentRequest, type AgentNamespace } from "agents";
+import * as ai from "ai";
+import { wrapAISDK } from "agents/observability/ai";
+import { createWorkersAI } from "workers-ai-provider";
 
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "MyAgent",
-        "class_name": "MyAgent"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["MyAgent"]
-    }
-  ],
+const tracedAI = wrapAISDK(ai, {
+  storeMessages: false,
+  storeTools: false,
+});
 
-  "ai": {
-    "binding": "AI"
-  },
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
-  "observability": {
-    "enabled": true,
-    "traces": {
-      "enabled": true
-    }
-  },
-
-  "vars": {
-    "CLOUDFLARE_ZONE_ID": "8dd143ee670968d39dd88fe8d65abab4",
-    "CLOUDFLARE_ZONE_ID_CISS": "bf3402d5f0155fd33ef6d7720e56143d"
-  }
+export interface Env {
+  MyAgent: AgentNamespace<MyAgent>;
+  AI: Ai;
+  CLOUDFLARE_API_TOKEN: string;
 }
+
+type Site = { nome: string; zoneId: string };
+
+const APELIDOS: Array<{ pergunta: RegExp; dominio: RegExp }> = [
+  { pergunta: /salgad|edilene/, dominio: /salgaderia/ },
+  { pergunta: /ciss|selva|sobreviv|starlink|spot ?x|pirotecni/, dominio: /ciss/ },
+  { pergunta: /florescer/, dominio: /florescer/ },
+  { pergunta: /manaus|decora/, dominio: /manaus/ },
+];
+
+export class MyAgent extends Agent<Env> {
+  cfHeaders() {
+    return {
+      Authorization: `Bearer ${this.env.CLOUDFLARE_API_TOKEN}`,
+      "Content-Type": "application/json",
+    };
+  }
+
+  async listSites(): Promise<Site[] | { erro: string; detalhes: unknown }> {
+    const res = await fetch(
+      "https://api.cloudflare.com/client/v4/zones?per_page=50",
+      { headers: this.cfHeaders() }
+    );
+    const data: any = await res.json();
+    
