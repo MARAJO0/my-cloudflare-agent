@@ -33,4 +33,6 @@
 
   "vars": {
     "CLOUDFLARE_ZONE_ID": "8dd143ee670968d39dd88fe8d65abab4",
-    "CLOUDFLARE_ZONE_ID_CISS": "bf3
+    "CLOUDFLARE_ZONE_ID_CISS": "bf3402d5f0155fd33ef6d7720e56143d"
+  }
+}
